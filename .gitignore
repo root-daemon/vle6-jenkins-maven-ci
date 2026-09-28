@@ -9,3 +9,6 @@ terraform/*.tfplan
 terraform/terraform.tfvars
 keys/
 ansible/inventory.ini
+evidence/
+output/
+tmp/

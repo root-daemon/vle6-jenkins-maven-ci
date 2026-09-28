@@ -15,7 +15,7 @@ variable "public_key_path" {
 
 variable "key_name" {
   type    = string
-  default = "vle6-jenkins-20260928"
+  default = "vle6-jenkins-lab-20260928"
 }
 
 variable "instance_type" {

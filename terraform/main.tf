@@ -47,6 +47,31 @@ resource "aws_key_pair" "jenkins" {
   public_key = file(var.public_key_path)
 }
 
+resource "aws_iam_role" "jenkins_ssm" {
+  name = "vle6-jenkins-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_ssm_core" {
+  role       = aws_iam_role.jenkins_ssm.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "jenkins_ssm" {
+  name = "vle6-jenkins-ssm-profile"
+  role = aws_iam_role.jenkins_ssm.name
+}
+
 resource "aws_security_group" "jenkins" {
   name        = "vle6-jenkins-sg"
   description = "SSH access to the VLE 6 Jenkins lab host"
@@ -80,6 +105,7 @@ resource "aws_instance" "jenkins" {
   subnet_id                   = data.aws_subnet.selected.id
   vpc_security_group_ids      = [aws_security_group.jenkins.id]
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_ssm.name
   key_name                    = aws_key_pair.jenkins.key_name
 
   metadata_options {
