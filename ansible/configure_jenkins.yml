@@ -1,0 +1,150 @@
+---
+- name: Configure the VLE 6 Jenkins and Maven controller
+  hosts: jenkins
+  become: true
+  vars:
+    github_repository: "https://github.com/root-daemon/vle6-jenkins-maven-ci.git"
+    jenkins_job_name: "vle6-maven-ci"
+  tasks:
+    - name: Install Java, Maven, Git, and package prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - fontconfig
+          - git
+          - openjdk-17-jdk
+          - maven
+        update_cache: true
+        state: present
+
+    - name: Create the Jenkins package signing-key directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Install the Jenkins signing key
+      ansible.builtin.get_url:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        dest: /etc/apt/keyrings/jenkins-keyring.asc
+        mode: "0644"
+
+    - name: Configure the Jenkins stable package repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+        filename: jenkins
+        state: present
+
+    - name: Install Jenkins
+      ansible.builtin.apt:
+        name: jenkins
+        update_cache: true
+        state: present
+
+    - name: Create the Jenkins systemd override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/jenkins.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Disable only the setup wizard for this tunnel-only lab controller
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/jenkins.service.d/lab.conf
+        mode: "0644"
+        content: |
+          [Service]
+          Environment="JAVA_OPTS=-Djenkins.install.runSetupWizard=false"
+
+    - name: Stop Jenkins while plugins are installed
+      ansible.builtin.systemd:
+        name: jenkins
+        state: stopped
+      failed_when: false
+
+    - name: Install required Jenkins pipeline plugins
+      ansible.builtin.command:
+        cmd: /usr/bin/jenkins-plugin-cli --plugins "workflow-aggregator git github maven-plugin junit"
+      changed_when: true
+
+    - name: Start Jenkins with the lab configuration
+      ansible.builtin.systemd:
+        name: jenkins
+        daemon_reload: true
+        enabled: true
+        state: restarted
+
+    - name: Wait for Jenkins HTTP service on loopback
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/login
+        status_code: [200, 403]
+      register: jenkins_ready
+      retries: 30
+      delay: 5
+      until: jenkins_ready.status in [200, 403]
+
+    - name: Write the Jenkins pipeline job configuration
+      ansible.builtin.copy:
+        dest: /tmp/vle6-maven-ci-config.xml
+        mode: "0600"
+        content: |
+          <?xml version='1.1' encoding='UTF-8'?>
+          <flow-definition plugin="workflow-job">
+            <description>VLE 6 GitHub, Jenkins, and Maven continuous integration job.</description>
+            <keepDependencies>false</keepDependencies>
+            <properties>
+              <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+                <triggers>
+                  <hudson.triggers.SCMTrigger>
+                    <spec>* * * * *</spec>
+                    <ignorePostCommitHooks>false</ignorePostCommitHooks>
+                  </hudson.triggers.SCMTrigger>
+                </triggers>
+              </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+            </properties>
+            <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+              <scm class="hudson.plugins.git.GitSCM" plugin="git">
+                <configVersion>2</configVersion>
+                <userRemoteConfigs>
+                  <hudson.plugins.git.UserRemoteConfig>
+                    <url>{{ github_repository }}</url>
+                  </hudson.plugins.git.UserRemoteConfig>
+                </userRemoteConfigs>
+                <branches>
+                  <hudson.plugins.git.BranchSpec>
+                    <name>*/main</name>
+                  </hudson.plugins.git.BranchSpec>
+                </branches>
+                <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+                <submoduleCfg class="empty-list"/>
+                <extensions/>
+              </scm>
+              <scriptPath>Jenkinsfile</scriptPath>
+              <lightweight>true</lightweight>
+            </definition>
+            <triggers/>
+            <disabled>false</disabled>
+          </flow-definition>
+
+    - name: Create or update the Jenkins pipeline job
+      ansible.builtin.shell: |
+        set -eu
+        if curl --fail --silent http://127.0.0.1:8080/job/{{ jenkins_job_name }}/api/json >/dev/null; then
+          curl --fail --silent --show-error --request POST --header 'Content-Type: application/xml' --data-binary @/tmp/vle6-maven-ci-config.xml http://127.0.0.1:8080/job/{{ jenkins_job_name }}/config.xml
+        else
+          curl --fail --silent --show-error --request POST --header 'Content-Type: application/xml' --data-binary @/tmp/vle6-maven-ci-config.xml "http://127.0.0.1:8080/createItem?name={{ jenkins_job_name }}"
+        fi
+      changed_when: true
+
+    - name: Report installed tool versions
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - java -version
+        - mvn -version
+        - git --version
+      register: tool_versions
+      changed_when: false
+
+    - name: Display installed tool versions
+      ansible.builtin.debug:
+        var: tool_versions.results
