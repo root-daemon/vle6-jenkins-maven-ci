@@ -1,0 +1,61 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadSourceAndStateBucket",
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketAcl", "s3:GetBucketLocation", "s3:ListBucket"],
+      "Resource": "arn:aws:s3:::vle6-terraform-state-071292884790-us-east-1"
+    },
+    {
+      "Sid": "ReadSourceAndManageTerraformState",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": [
+        "arn:aws:s3:::vle6-terraform-state-071292884790-us-east-1/artifacts/vle6-cloud-redo.zip",
+        "arn:aws:s3:::vle6-terraform-state-071292884790-us-east-1/vle6/terraform.tfstate",
+        "arn:aws:s3:::vle6-terraform-state-071292884790-us-east-1/vle6/terraform.tfstate.tflock"
+      ]
+    },
+    {
+      "Sid": "ReadExistingTerraformInfrastructure",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:GetInstanceProfile",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies",
+        "iam:ListRoleTags",
+        "iam:ListInstanceProfileTags",
+        "iam:ListInstanceProfilesForRole",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RunCommandsOnVLE6Jenkins",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:us-east-1::document/AWS-RunShellScript",
+        "arn:aws:ec2:us-east-1:071292884790:instance/i-03bee19bc9c0ebf3f"
+      ]
+    },
+    {
+      "Sid": "ReadCommandResults",
+      "Effect": "Allow",
+      "Action": "ssm:GetCommandInvocation",
+      "Resource": "*"
+    },
+    {
+      "Sid": "WriteOnlyVLE6BuildLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:DescribeLogStreams", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:us-east-1:071292884790:log-group:/aws/codebuild/vle6-terraform-cloud-deploy:*"
+    }
+  ]
+}
